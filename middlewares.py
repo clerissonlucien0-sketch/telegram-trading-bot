@@ -2,6 +2,7 @@ from typing import Any, Awaitable, Callable, Dict
 
 from aiogram import BaseMiddleware
 from aiogram.types import TelegramObject
+from loguru import logger
 
 import crud
 from db import session_scope
@@ -18,7 +19,12 @@ class TrackUsersMiddleware(BaseMiddleware):
     ) -> Any:
         user = data.get("event_from_user")
         chat = data.get("event_chat")
+        
         if user is not None and not user.is_bot and chat is not None and chat.type == "private":
-            async with session_scope() as session:
-                await crud.upsert_user(session, user)
+            try:
+                async with session_scope() as session:
+                    await crud.upsert_user(session, user)
+            except Exception as e:
+                logger.error("Failed to track user {}: {}", user.id, e)
+        
         return await handler(event, data)
