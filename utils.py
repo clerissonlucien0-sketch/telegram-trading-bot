@@ -15,7 +15,12 @@ def setup_logging(file_path="logs/bot.log", level="INFO"):
     logger.add(sys.stderr, level=level, format=log_format)
     logger.add(file_path, level=level, format=log_format, rotation="10 MB", retention="7 days")
 
-    logging.basicConfig(handlers=[InterceptHandler()], level=0, force=True)
+    # Intercept standard logging to use loguru
+    logging.basicConfig(
+        level=0,
+        handlers=[InterceptHandler()],
+        force=True
+    )
 
     logging.getLogger("aiogram.event").setLevel(logging.WARNING)
 
