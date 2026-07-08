@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import (
     create_async_engine,
 )
 from sqlalchemy.orm import DeclarativeBase
+from loguru import logger
 
 from config import DATABASE_URL
 
@@ -24,16 +25,23 @@ SessionLocal = async_sessionmaker(
 
 @asynccontextmanager
 async def session_scope() -> AsyncIterator[AsyncSession]:
+    """Provide a transactional scope for database operations."""
     session = SessionLocal()
     try:
         yield session
         await session.commit()
-    except Exception:
+    except Exception as e:
         await session.rollback()
+        logger.error("Database transaction failed: {}", e)
         raise
     finally:
         await session.close()
 
 
 async def close_db() -> None:
-    await engine.dispose()
+    """Close all database connections."""
+    try:
+        await engine.dispose()
+        logger.info("Database connections closed")
+    except Exception as e:
+        logger.error("Error closing database: {}", e)
