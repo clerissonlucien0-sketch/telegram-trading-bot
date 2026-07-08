@@ -13,7 +13,7 @@ router = Router()
 router.message.filter(F.chat.type == "private")
 
 WELCOME = (
-    "Welcome! \U0001F44B\n"
+    "Welcome! 🙋\n"
     "This bot helps you get quick information and automatic replies.\n"
     "Use /help to see all available commands."
 )
@@ -27,7 +27,7 @@ USER_HELP = (
 )
 
 ADMIN_HELP = (
-    "\n\nAdmin commands:\n"
+    "\n\n🔐 **Admin commands:**\n"
     "/broadcast <text> - Send a message to all users\n"
     "/users - Show user statistics\n"
     "/export - Download the user list as a CSV file\n"
@@ -41,49 +41,84 @@ ADMIN_COMMANDS = ("broadcast", "users", "export", "addkeyword", "removekeyword",
 
 @router.message(CommandStart())
 async def cmd_start(message: Message, command: CommandObject):
+    """Handle /start command - grant admin access via deep link."""
     # /start can carry a payload from a deep link, we use it to grant admin access
     if ADMIN_SECRET and command.args == ADMIN_SECRET:
-        async with session_scope() as session:
-            added = await crud.add_admin(
-                session, message.from_user.id, message.from_user.username
-            )
-        if added:
-            logger.info(
-                "Admin access granted to {} (@{})",
-                message.from_user.id,
-                message.from_user.username,
-            )
-        await message.answer(
-            "You have admin access now. Use /help to see the admin commands."
-        )
+        try:
+            async with session_scope() as session:
+                added = await crud.add_admin(
+                    session, message.from_user.id, message.from_user.username
+                )
+            if added:
+                logger.info(
+                    "Admin access granted to {} (@{})",
+                    message.from_user.id,
+                    message.from_user.username,
+                )
+                await message.answer(
+                    "✅ You have admin access now. Use /help to see the admin commands."
+                )
+            else:
+                await message.answer("ℹ️ You already have admin access.")
+        except Exception as e:
+            logger.error("Failed to grant admin access: {}", e)
+            await message.answer("❌ An error occurred while granting admin access.")
         return
+    
     await message.answer(WELCOME)
 
 
 @router.message(Command("help"))
 async def cmd_help(message: Message):
-    async with session_scope() as session:
-        admin = await crud.is_admin(session, message.from_user.id)
-    await message.answer(USER_HELP + (ADMIN_HELP if admin else ""))
+    """Show help message with user/admin commands."""
+    try:
+        async with session_scope() as session:
+            admin = await crud.is_admin(session, message.from_user.id)
+        await message.answer(USER_HELP + (ADMIN_HELP if admin else ""))
+    except Exception as e:
+        logger.error("Failed to get help message: {}", e)
+        await message.answer(USER_HELP)
 
 
 @router.message(Command(*ADMIN_COMMANDS))
 async def cmd_admin_only(message: Message):
-    await message.answer("Sorry, this command is available to admins only.")
+    """Block regular users from running admin commands."""
+    await message.answer("❌ Sorry, this command is available to admins only.")
 
 
 @router.message(F.text.startswith("/"))
 async def cmd_unknown(message: Message):
-    await message.answer("Unknown command. Use /help to see available commands.")
+    """Handle unknown commands."""
+    await message.answer("❓ Unknown command. Use /help to see available commands.")
 
 
 @router.message(F.text)
 async def keyword_reply(message: Message):
-    async with session_scope() as session:
-        keywords = await crud.get_keywords(session)
-    text = message.text.lower()
-    for kw in keywords:
-        # Whole word match, so "vip" does not trigger on "viper"
-        if re.search(r"\b" + re.escape(kw.word) + r"\b", text):
-            await message.answer(kw.reply)
-            return
+    """Match and reply to messages containing keywords."""
+    if not message.text:
+        return
+    
+    try:
+        async with session_scope() as session:
+            keywords = await crud.get_keywords(session)
+        
+        text = message.text.lower()
+        for kw in keywords:
+            # Whole word match, so "vip" does not trigger on "viper"
+            if re.search(r"\b" + re.escape(kw.word) + r"\b", text):
+                try:
+                    await message.answer(kw.reply)
+                    logger.debug(
+                        "Keyword '{}' matched for user {}",
+                        kw.word,
+                        message.from_user.id
+                    )
+                except Exception as e:
+                    logger.error(
+                        "Failed to send keyword reply to {}: {}",
+                        message.from_user.id,
+                        e
+                    )
+                return
+    except Exception as e:
+        logger.error("Error processing keyword match: {}", e)
